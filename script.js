@@ -46,6 +46,10 @@ export const CONFIG = {
     radius: 0.65,
     threshold: 0.22,
   },
+  walkthrough: {
+    speed: 0.11,
+    damping: 0.02,
+  },
 };
 
 const VERTEX_SHADER = /* glsl */ `
@@ -287,12 +291,39 @@ function init() {
   controls.update();
 
   // Double-click smoothly resets back to the head-on view
+  // 'a' toggles the meditative automatic walkthrough
   let resettingView = false;
+  let autoWalkthrough = false;
+  let walkTime = 0;
+  const walkIndicator = document.getElementById('walkthrough-indicator');
+  const desiredCamPos = new THREE.Vector3();
+  const desiredTarget = new THREE.Vector3();
+
+  function setAutoWalkthrough(enabled) {
+    autoWalkthrough = enabled;
+    if (enabled) {
+      resettingView = false;
+    }
+    if (walkIndicator) {
+      walkIndicator.classList.toggle('active', enabled);
+    }
+  }
+
   canvas.addEventListener('dblclick', () => {
+    setAutoWalkthrough(false);
     resettingView = true;
   });
   controls.addEventListener('start', () => {
     resettingView = false;
+    if (autoWalkthrough) {
+      setAutoWalkthrough(false);
+    }
+  });
+  window.addEventListener('keydown', (event) => {
+    if (event.metaKey || event.ctrlKey || event.altKey) return;
+    if (event.key === 'a' || event.key === 'A') {
+      setAutoWalkthrough(!autoWalkthrough);
+    }
   });
 
   // Post-processing with HalfFloat render target to preserve HDR bloom glow
@@ -367,16 +398,34 @@ function init() {
 
   function animate() {
     requestAnimationFrame(animate);
-    const elapsed = clock.getElapsedTime();
+    const delta = Math.min(clock.getDelta(), 0.1);
+    const elapsed = clock.elapsedTime;
 
-    // Damped mouse-parallax applied to sceneGroup so OrbitControls remain unobstructed
-    pointer.currentX += (pointer.targetX - pointer.currentX) * CONFIG.parallax.damping;
-    pointer.currentY += (pointer.targetY - pointer.currentY) * CONFIG.parallax.damping;
+    // Damped mouse-parallax applied to sceneGroup; eases to center during auto walkthrough
+    const targetParallaxX = autoWalkthrough ? 0 : pointer.targetX;
+    const targetParallaxY = autoWalkthrough ? 0 : pointer.targetY;
+    pointer.currentX += (targetParallaxX - pointer.currentX) * CONFIG.parallax.damping;
+    pointer.currentY += (targetParallaxY - pointer.currentY) * CONFIG.parallax.damping;
 
     sceneGroup.position.x = -pointer.currentX * CONFIG.parallax.strengthX;
     sceneGroup.position.y = -pointer.currentY * CONFIG.parallax.strengthY;
 
-    if (resettingView) {
+    if (autoWalkthrough) {
+      walkTime += delta * CONFIG.walkthrough.speed;
+      // Serene Lissajous glide weaving through and around the parallel planes
+      desiredCamPos.set(
+        Math.sin(walkTime * 0.72) * 12.5 + Math.sin(walkTime * 0.31) * 3.0,
+        Math.sin(walkTime * 0.43) * 4.5 + Math.cos(walkTime * 0.23) * 1.4,
+        -3.5 + Math.cos(walkTime * 0.55) * 14.5
+      );
+      desiredTarget.set(
+        Math.sin(walkTime * 0.45 + 0.8) * 2.4,
+        Math.cos(walkTime * 0.37) * 1.5,
+        -6.0 + Math.sin(walkTime * 0.29) * 2.8
+      );
+      camera.position.lerp(desiredCamPos, CONFIG.walkthrough.damping);
+      controls.target.lerp(desiredTarget, CONFIG.walkthrough.damping);
+    } else if (resettingView) {
       camera.position.lerp(baseCameraPos, 0.08);
       controls.target.lerp(baseTarget, 0.08);
       if (
