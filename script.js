@@ -309,6 +309,9 @@ function init() {
     }
   }
 
+  // Start in meditative auto walkthrough mode by default
+  setAutoWalkthrough(true);
+
   canvas.addEventListener('dblclick', () => {
     setAutoWalkthrough(false);
     resettingView = true;
